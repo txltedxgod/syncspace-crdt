@@ -1,0 +1,32 @@
+{
+  "name": "syncspace-crdt",
+  "version": "1.0.0",
+  "description": "Production-grade real-time collaborative infinite canvas and whiteboard engine built with CRDTs and WebSockets",
+  "main": "dist/server/server.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/server/server.js",
+    "dev:server": "ts-node src/server/server.ts",
+    "test": "vitest run"
+  },
+  "keywords": [
+    "crdt",
+    "realtime",
+    "canvas",
+    "collaboration",
+    "websockets",
+    "typescript",
+    "spatial-index"
+  ],
+  "author": "txltedxgod <txltedxgod@users.noreply.github.com>",
+  "license": "MIT",
+  "dependencies": {
+    "ws": "^8.16.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/ws": "^8.5.10",
+    "typescript": "^5.4.0",
+    "vitest": "^1.4.0"
+  }
+}

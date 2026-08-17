@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SyncSpace — Collaborative CRDT Infinite Canvas</title>
+    <style>
+        :root {
+            --bg: #0d1117;
+            --panel: #161b22;
+            --border: #30363d;
+            --accent: #58a6ff;
+            --text: #f0f6fc;
+            --text-dim: #8b949e;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+        body { background: var(--bg); color: var(--text); overflow: hidden; width: 100vw; height: 100vh; }
+        #canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; cursor: crosshair; }
+        .toolbar { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 8px 12px; display: flex; gap: 8px; box-shadow: 0 8px 32px rgba(0,0,0,0.5); z-index: 10; }
+        .btn { background: transparent; border: 1px solid transparent; color: var(--text); padding: 8px 14px; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; transition: 0.15s; }
+        .btn:hover { background: #21262d; border-color: var(--border); }
+        .btn.active { background: #1f6feb; border-color: #58a6ff; }
+        .status-badge { position: fixed; bottom: 20px; left: 20px; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 8px 14px; font-size: 12px; display: flex; align-items: center; gap: 8px; z-index: 10; }
+        .dot { width: 8px; height: 8px; border-radius: 50%; background: #238636; }
+        .peer-cursor { position: absolute; pointer-events: none; transform: translate(-50%, -50%); transition: all 0.05s ease-out; z-index: 20; }
+        .peer-label { background: rgba(0,0,0,0.8); color: #fff; font-size: 11px; padding: 2px 6px; border-radius: 4px; position: absolute; top: 18px; left: 18px; white-space: nowrap; }
+    </style>
+</head>
+<body>
+    <div class="toolbar">
+        <button class="btn active" onclick="setTool('select')">🖐️ Select</button>
+        <button class="btn" onclick="setTool('rectangle')">🟦 Rectangle</button>
+        <button class="btn" onclick="setTool('sticky')">📝 Sticky Note</button>
+        <button class="btn" onclick="setTool('circle')">⭕ Circle</button>
+        <button class="btn" onclick="clearCanvas()" style="color: #f85149;">🗑️ Clear</button>
+    </div>
+
+    <div class="status-badge">
+        <div class="dot" id="status-dot"></div>
+        <span id="status-text">Connected to CRDT Sync</span>
+        <span style="color: var(--text-dim);">| Peer: <strong id="peer-display">...</strong></span>
+    </div>
+
+    <canvas id="canvas"></canvas>
+    <div id="cursors-container"></div>
+
+    <script>
+        const myPeerId = 'peer_' + Math.random().toString(36).substring(2, 9);
+        const myColor = '#' + Math.floor(Math.random()*16777215).toString(16);
+        document.getElementById('peer-display').innerText = myPeerId;
+
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        let currentTool = 'select';
+        let elements = new Map();
+        let localLamport = 0;
+        let isDragging = false;
+        let startX = 0, startY = 0;
+        let selectedId = null;
+
+        function resize() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            render();
+        }
+        window.addEventListener('resize', resize);
+
+        function setTool(tool) {
+            currentTool = tool;
+            document.querySelectorAll('.btn').forEach(b => b.classList.remove('active'));
+            event.target.classList.add('active');
+        }
+
+        // WebSocket CRDT Connection
+        const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const ws = new WebSocket(wsProtocol + '//' + window.location.host);
+
+        ws.onmessage = (event) => {
+            const msg = JSON.parse(event.data);
+            if (msg.type === 'SNAPSHOT') {
+                elements.clear();
+                msg.elements.forEach(el => {
+                    if (!el.tombstone) elements.set(el.id, el);
+                });
+                render();
+            } else if (msg.type === 'OPERATION') {
+                applyRemoteOp(msg.operation);
+            }
+        };
+
+        function applyRemoteOp(op) {
+            if (op.type === 'DELETE') {
+                elements.delete(op.elementId);
+            } else if (op.payload) {
+                elements.set(op.elementId, { id: op.elementId, ...op.payload, clock: op.clock });
+            }
+            render();
+        }
+
+        function broadcastOp(type, elementId, payload) {
+            localLamport++;
+            const op = {
+                type,
+                elementId,
+                clock: { counter: localLamport, peerId: myPeerId },
+                payload
+            };
+            if (type === 'DELETE') {
+                elements.delete(elementId);
+            } else {
+                elements.set(elementId, { id: elementId, ...payload, clock: op.clock });
+            }
+            ws.send(JSON.stringify({ type: 'OPERATION', operation: op }));
+            render();
+        }
+
+        function render() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Draw grid
+            ctx.strokeStyle = '#1e2633';
+            ctx.lineWidth = 1;
+            for (let x = 0; x < canvas.width; x += 40) {
+                ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height); ctx.stroke();
+            }
+            for (let y = 0; y < canvas.height; y += 40) {
+                ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); ctx.stroke();
+            }
+
+            // Draw CRDT elements
+            elements.forEach(el => {
+                ctx.fillStyle = el.fill || '#3b82f6';
+                ctx.strokeStyle = el.stroke || '#1d4ed8';
+                ctx.lineWidth = 2;
+
+                if (el.type === 'rectangle' || el.type === 'sticky') {
+                    ctx.fillRect(el.x, el.y, el.width, el.height);
+                    ctx.strokeRect(el.x, el.y, el.width, el.height);
+                } else if (el.type === 'circle') {
+                    ctx.beginPath();
+                    ctx.arc(el.x + el.width/2, el.y + el.height/2, el.width/2, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.stroke();
+                }
+
+                if (el.text) {
+                    ctx.fillStyle = el.type === 'sticky' ? '#000000' : '#ffffff';
+                    ctx.font = '14px sans-serif';
+                    ctx.fillText(el.text, el.x + 12, el.y + 28);
+                }
+            });
+        }
+
+        canvas.addEventListener('mousedown', (e) => {
+            startX = e.clientX;
+            startY = e.clientY;
+            isDragging = true;
+
+            if (currentTool !== 'select') {
+                const newId = 'elem_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4);
+                const isSticky = currentTool === 'sticky';
+                broadcastOp('CREATE', newId, {
+                    type: currentTool,
+                    x: startX,
+                    y: startY,
+                    width: isSticky ? 160 : 140,
+                    height: isSticky ? 120 : 90,
+                    fill: isSticky ? '#fef08a' : '#3b82f6',
+                    stroke: isSticky ? '#eab308' : '#1d4ed8',
+                    text: isSticky ? 'New Note' : 'CRDT Node',
+                    zIndex: elements.size + 1
+                });
+            }
+        });
+
+        canvas.addEventListener('mouseup', () => { isDragging = false; });
+
+        function clearCanvas() {
+            elements.forEach((el, id) => {
+                broadcastOp('DELETE', id, {});
+            });
+        }
+
+        resize();
+    </script>
+</body>
+</html>
