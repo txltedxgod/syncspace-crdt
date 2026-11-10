@@ -2,19 +2,17 @@ import http from 'http';
 import fs from 'fs';
 import path from 'path';
 import { WebSocketServer, WebSocket } from 'ws';
-import { CRDTEngine } from '../crdt/engine';
-import { CRDTOperation, UserPresence } from '../crdt/types';
+import { SyncSpaceRoom } from './room';
 
-const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
+const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
-const crdtEngine = new CRDTEngine('server-authority');
-const presences = new Map<string, UserPresence>();
+const room = new SyncSpaceRoom('server-authority');
 
 // Seed initial canvas with demo items
-crdtEngine.applyOperation({
+room.engine.applyOperation({
   type: 'CREATE',
   elementId: 'elem-welcome-1',
-  clock: crdtEngine.nextClock(),
+  clock: room.engine.nextClock(),
   payload: {
     type: 'sticky',
     x: 100,
@@ -28,10 +26,10 @@ crdtEngine.applyOperation({
   },
 });
 
-crdtEngine.applyOperation({
+room.engine.applyOperation({
   type: 'CREATE',
   elementId: 'elem-box-2',
-  clock: crdtEngine.nextClock(),
+  clock: room.engine.nextClock(),
   payload: {
     type: 'rectangle',
     x: 340,
@@ -59,7 +57,13 @@ const server = http.createServer((req, res) => {
     });
   } else if (req.url === '/health') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ status: 'ok', service: 'syncspace-crdt' }));
+    res.end(
+      JSON.stringify({
+        status: 'ok',
+        service: 'syncspace-crdt',
+        activePeers: room.getPresences().length,
+      })
+    );
   } else {
     res.writeHead(404);
     res.end('Not Found');
@@ -69,47 +73,26 @@ const server = http.createServer((req, res) => {
 const wss = new WebSocketServer({ server });
 
 wss.on('connection', (ws: WebSocket) => {
-  // 1. Send full initial snapshot
-  const initialPayload = {
-    type: 'SNAPSHOT',
-    elements: crdtEngine.exportSnapshot(),
-    presences: Array.from(presences.values()),
-  };
-  ws.send(JSON.stringify(initialPayload));
+  ws.send(JSON.stringify(room.getSnapshotPayload()));
 
   ws.on('message', (message: string) => {
-    try {
-      const data = JSON.parse(message.toString());
-
-      if (data.type === 'OPERATION') {
-        const op: CRDTOperation = data.operation;
-        const accepted = crdtEngine.applyOperation(op);
-        if (accepted) {
-          // Broadcast to all other peers
-          broadcastExcept(ws, {
-            type: 'OPERATION',
-            operation: op,
-          });
-        }
-      } else if (data.type === 'PRESENCE') {
-        const presence: UserPresence = data.presence;
-        presences.set(presence.peerId, presence);
-        broadcastExcept(ws, {
-          type: 'PRESENCE',
-          presence,
-        });
-      }
-    } catch (e) {
-      console.error('Error handling WS message:', e);
+    const result = room.handleMessage(ws, message.toString());
+    if (result.broadcast) {
+      broadcastExcept(ws, result.broadcast);
+    } else if (result.error) {
+      ws.send(JSON.stringify({ type: 'ERROR', message: result.error }));
     }
   });
 
   ws.on('close', () => {
-    // Clean up
+    const leaveEvent = room.handleDisconnect(ws);
+    if (leaveEvent) {
+      broadcastExcept(ws, leaveEvent);
+    }
   });
 });
 
-function broadcastExcept(sender: WebSocket, data: any) {
+function broadcastExcept(sender: WebSocket, data: Record<string, unknown>) {
   const jsonStr = JSON.stringify(data);
   wss.clients.forEach((client) => {
     if (client !== sender && client.readyState === WebSocket.OPEN) {
