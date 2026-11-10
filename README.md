@@ -1,5 +1,10 @@
 # 🎨 SyncSpace CRDT
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.0+-3178C6.svg?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![CRDT](https://img.shields.io/badge/CRDT-Realtime-FF4088.svg)](https://crdt.tech/)
+
+
 [![CI](https://github.com/txltedxgod/syncspace-crdt/actions/workflows/ci.yml/badge.svg)](https://github.com/txltedxgod/syncspace-crdt/actions)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.4+-3178C6?logo=typescript)](https://www.typescriptlang.org)
 [![WebSockets](https://img.shields.io/badge/WebSockets-Realtime-010101)](https://developer.mozilla.org/en-US/docs/Web/API/WebSockets_API)
