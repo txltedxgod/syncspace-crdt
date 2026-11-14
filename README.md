@@ -14,6 +14,18 @@
 
 ---
 
+## 🎬 Feature Demo
+
+<p align="center">
+  <img src="assets/demo.gif" alt="SyncSpace CRDT Feature Demo — Real-Time Collaborative Infinite Canvas & CRDT Engine" width="840" />
+</p>
+<p align="center">
+  <sub><a href="assets/demo.mp4">Watch / Download 1080p60 MP4</a></sub>
+</p>
+
+---
+---
+
 ## 🌟 Features & Mathematics
 
 ```
