@@ -21,7 +21,7 @@
   "author": "txltedxgod <txltedxgod@users.noreply.github.com>",
   "license": "MIT",
   "dependencies": {
-    "ws": "^8.16.0"
+    "ws": "^8.23.0"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",
